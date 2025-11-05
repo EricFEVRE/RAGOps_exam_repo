@@ -20,3 +20,7 @@ prometheus-client>=0.16.0
 
 ragas 
 datasets>=2.19.2 
+pytest
+
+psycopg2-binary==2.9.9
+minio==7.2.8
