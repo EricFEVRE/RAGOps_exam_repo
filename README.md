@@ -9,6 +9,9 @@ The provided **RAGOps repository** includes the final state of the architecture 
 * A **monitoring stack** using Prometheus + Grafana.
 * Existing ingestion endpoints for plain text and PDFs (`ingest.py`, `pdf.py`, `batch_ingest.py`).
 
+
+> **Important:** Don't forget to add your `.env` file the same way as on the course.
+
 Your task is to **extend the system** so that all ingested documents are also:
 
 1. Stored in an **Object Store (MinIO)**.
@@ -41,7 +44,7 @@ pytest tests/test_metadata.py
 
 | Path                                   | Purpose                                                               |
 | -------------------------------------- | --------------------------------------------------------------------- |
-| `backend/app/metadata.py`              | FastAPI router for handling metadata and file uploads.                |
+| `backend/app/api/metadata.py`              | FastAPI router for handling metadata and file uploads.                |
 | `backend/app/services/db.py`           | PostgreSQL connection utility with context manager.                   |
 | `backend/app/services/minio_client.py` | MinIO client setup and bucket creation.                               |
 | `db/`                                  | Folder containing database initialization scripts (e.g., `init.sql`). |
@@ -158,20 +161,7 @@ MINIO_BUCKET: documents
 
 ---
 
-## 5. Evaluation Criteria
-
-| Criterion                                     | Weight |
-| --------------------------------------------- | ------ |
-| Functional correctness                        | 50%    |
-| Integration with existing RAGOps architecture | 20%    |
-| Dockerization & environment configuration     | 20%    |
-| Test passing (`test_metadata.py`)             | 10%    |
-
-**Bonus (+10%)**: Integrate Prometheus metrics for upload events or bucket size.
-
----
-
-## 6. Submission Guidelines
+## 5. Submission Guidelines
 
 * Submit the **entire repository** with your additions and modifications.
 * Do not delete or rename any original files outside your modifications.
