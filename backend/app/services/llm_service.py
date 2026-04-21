@@ -5,7 +5,7 @@ from app.core.logging import logger
 from app.models.chat import ChatMessage
 
 
-async def generate_chat_completion(messages: List[ChatMessage], model: str = "groq-llama3", temperature: float = 0.3) -> Dict[str, Any]:
+async def generate_chat_completion(messages: List[ChatMessage], model: str = "gpt-5-nano", temperature: float = 0.3) -> Dict[str, Any]:
     """Call LiteLLM chat completions API."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         payload = {
@@ -24,7 +24,7 @@ async def generate_rag_answer(query: str, context: str, search_method: str) -> s
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             payload = {
-                "model": "groq-llama3",
+                "model": "gpt-5-nano",
                 "messages": [
                     {"role": "system", "content": f"You are a helpful assistant. Answer based on document chunks. Retrieval used {search_method}."},
                     {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}

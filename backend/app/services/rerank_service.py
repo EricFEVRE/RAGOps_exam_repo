@@ -1,47 +1,65 @@
 import httpx
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.models.rerank import RerankRequest
 from app.services.search_service import search_chunks
 from app.core.config import settings
+
+_TEI_URL = getattr(settings, "TEI_URL", "http://tei-embeddings:80")
+_TEI_BATCH_SIZE = 32
+
+async def _embed_texts(texts: List[str]) -> List[List[float]]:
+    """Call TEI directly (no LiteLLM) in batches to avoid encoding_format issues."""
+    all_embeddings = []
+    for i in range(0, len(texts), _TEI_BATCH_SIZE):
+        batch = texts[i: i + _TEI_BATCH_SIZE]
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{_TEI_URL}/v1/embeddings",
+                json={"model": "local-embeddings", "input": batch},
+                headers={"Content-Type": "application/json"},
+            )
+        r.raise_for_status()
+        batch_data = r.json().get("data", [])
+        all_embeddings.extend([item["embedding"] for item in batch_data])
+    return all_embeddings
+
+
+def _cosine_sim(a: List[float], b: List[float]) -> float:
+    a_arr, b_arr = np.array(a), np.array(b)
+    denom = np.linalg.norm(a_arr) * np.linalg.norm(b_arr)
+    return float(np.dot(a_arr, b_arr) / denom) if denom > 0 else 0.0
+
 
 async def search_with_reranking(req: RerankRequest) -> Dict[str, Any]:
     base_results = await search_chunks(req.query, req.k, use_embeddings=True)
     hits = base_results.get("hits", [])
     if not hits:
-        return {"query": req.query, "chunks": [], "rerank_scores": [], "total_chunks_found": 0, "search_method": "hybrid+rerank"}
+        return {
+            "query": req.query,
+            "chunks": [],
+            "rerank_scores": [],
+            "total_chunks_found": 0,
+            "search_method": "hybrid+rerank",
+        }
 
     documents = [chunk["content"] for chunk in hits]
 
-    headers = {"Authorization": f"Bearer {settings.PROXY_KEY}"}
+    # Embed query and documents via TEI directly
+    query_embeddings = await _embed_texts([req.query])
+    doc_embeddings = await _embed_texts(documents)
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        q_resp = await client.post(
-            f"{settings.PROXY_URL}/v1/embeddings",
-            json={"model": "local-embeddings", "input": req.query},
-            headers=headers
-        )
-        d_resp = await client.post(
-            f"{settings.PROXY_URL}/v1/embeddings",
-            json={"model": "local-embeddings", "input": documents},
-            headers=headers
-        )
+    query_vec = query_embeddings[0]
+    scores = [_cosine_sim(query_vec, doc_vec) for doc_vec in doc_embeddings]
 
-    query_embedding = q_resp.json()["data"][0]["embedding"]
-    doc_embeddings = [d["embedding"] for d in d_resp.json()["data"]]
-
-    def cosine_sim(a, b):
-        a, b = np.array(a), np.array(b)
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-    scores = [cosine_sim(query_embedding, emb) for emb in doc_embeddings]
-    scored_chunks = [{"chunk": c, "score": s} for c, s in zip(hits, scores)]
-    scored_chunks.sort(key=lambda x: x["score"], reverse=True)
+    scored_chunks = sorted(
+        zip(hits, scores), key=lambda x: x[1], reverse=True
+    )
 
     return {
         "query": req.query,
-        "chunks": [sc["chunk"] for sc in scored_chunks],
-        "rerank_scores": [sc["score"] for sc in scored_chunks],
+        "chunks": [c for c, _ in scored_chunks],
+        "rerank_scores": [s for _, s in scored_chunks],
         "total_chunks_found": base_results.get("total", len(hits)),
-        "search_method": "hybrid+rerank"
+        "search_method": "hybrid+rerank",
     }

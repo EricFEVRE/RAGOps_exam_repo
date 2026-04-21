@@ -26,7 +26,7 @@ from app.services.rag_service import rag_search
 
 # --- 1. Configure LLM and Embeddings for RAGAS ---
 
-# LiteLLM proxy LLM (for GROQ access)
+# LiteLLM proxy LLM 
 ragas_llm = ChatOpenAI(
     base_url=settings.LITELLM_URL,
     model=settings.LITELLM_MODEL,
@@ -91,7 +91,7 @@ async def run_evaluation(testset: List[Dict[str, Any]]):
     
     # Step 3: Run Ragas Metrics
     
-    # Override Ragas defaults with your LiteLLM/Groq/TEI setup
+    # Override Ragas defaults with your LiteLLM/TEI setup
     
     score = evaluate(
         dataset,

@@ -6,33 +6,40 @@ from app.utils.hashing import md5_hash
 from app.utils.cache import get_json, set_json
 
 _CACHE_TTL = 3600  # seconds
-MAX_BATCH_SIZE = 32  # LiteLLM 
+_TEI_BATCH_SIZE = 32  # TEI max batch size
+
+# TEI is called directly to avoid LiteLLM injecting encoding_format,
+# which TEI does not support despite advertising an OpenAI-compatible API.
+_TEI_URL = getattr(settings, "TEI_URL", "http://tei-embeddings:80")
+
 
 async def _request_embeddings(texts: List[str]) -> Optional[List[dict]]:
-    all_data: List[dict] = []
-
-    # Split into batches
-    for i in range(0, len(texts), MAX_BATCH_SIZE):
-        batch = texts[i:i + MAX_BATCH_SIZE]
-
+    """Call TEI in batches of _TEI_BATCH_SIZE to respect server limits."""
+    all_data = []
+    for i in range(0, len(texts), _TEI_BATCH_SIZE):
+        batch = texts[i: i + _TEI_BATCH_SIZE]
         async with httpx.AsyncClient(timeout=60.0) as client:
             r = await client.post(
-                f"{settings.PROXY_URL}/v1/embeddings",
+                f"{_TEI_URL}/v1/embeddings",
+                # NOTE: do NOT pass encoding_format — TEI rejects it
                 json={"model": "local-embeddings", "input": batch},
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             )
-            if r.status_code != 200:
-                logger.error(f"Embedding request failed: {r.status_code} - {r.text}")
-                return None
-            batch_data = r.json().get("data", [])
-            all_data.extend(batch_data)
-
+        if r.status_code != 200:
+            logger.error(f"Embedding request failed: {r.status_code} - {r.text}")
+            return None
+        batch_data = r.json().get("data", [])
+        # Re-index so positions are relative to the full list
+        for item in batch_data:
+            item["index"] = len(all_data) + item.get("index", 0)
+        all_data.extend(batch_data)
     return all_data
+
 
 async def generate_embeddings(texts: List[str]) -> List[List[float]]:
     """
-    Generate sentence embeddings via LiteLLM (TEI backend), with Redis cache.
-    Uses utils.hashing + utils.cache for keys & JSON storage.
+    Generate sentence embeddings via TEI directly (bypasses LiteLLM proxy),
+    with Redis cache. Handles TEI batch size limit automatically.
     """
     results: List[Optional[List[float]]] = [None] * len(texts)
     uncached, idxs = [], []
@@ -47,7 +54,7 @@ async def generate_embeddings(texts: List[str]) -> List[List[float]]:
             uncached.append(t)
             idxs.append(i)
 
-    # 2) remote call if needed
+    # 2) remote call if needed (batched internally)
     if uncached:
         data = await _request_embeddings(uncached)
         if data is None:
